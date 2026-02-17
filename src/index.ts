@@ -4,14 +4,15 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import * as z from "zod";
 
-// ✅ Create MCP server
-const getServer = () => {
+/**
+ * Create MCP server instance (tools registered here)
+ */
+function createServer() {
   const server = new McpServer(
     { name: "marketing-mcp", version: "1.0.0" },
     { capabilities: { tools: {}, logging: {} } }
   );
 
-  // ✅ Test tool
   server.registerTool(
     "marketing_test",
     {
@@ -34,25 +35,33 @@ const getServer = () => {
   );
 
   return server;
-};
+}
 
-// ✅ Express app (no host restrictions)
+/**
+ * Express app (NO host validation / NO allowedHosts middleware)
+ */
 const app = createMcpExpressApp({
-  allowedOrigins: ["*"],
+  allowedOrigins: ["*"], // allow all origins
 });
 
-// ✅ Render runs behind proxy
+// Required on Render (behind proxy/load balancer)
 app.set("trust proxy", 1);
 
-app.use(express.json());
+// Ensure JSON body parsing
+app.use(express.json({ limit: "1mb" }));
 
-// ✅ MCP endpoint (IMPORTANT: /mcp)
+// Optional health check
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, service: "marketing-mcp" });
+});
+
+// MCP endpoint (JSON-RPC over Streamable HTTP)
 app.post("/mcp", async (req: Request, res: Response) => {
-  const server = getServer();
+  const server = createServer();
 
   try {
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
+      sessionIdGenerator: undefined, // stateless
     });
 
     await server.connect(transport);
@@ -74,10 +83,10 @@ app.post("/mcp", async (req: Request, res: Response) => {
   }
 });
 
-// Optional: GET /mcp not supported
-app.get("/mcp", (_req, res) =>
-  res.status(405).set("Allow", "POST").send("Method Not Allowed")
-);
+// Block GET /mcp (MCP expects POST)
+app.get("/mcp", (_req, res) => {
+  res.status(405).set("Allow", "POST").send("Method Not Allowed");
+});
 
 const PORT = Number(process.env.PORT || 8787);
 app.listen(PORT, () => {
