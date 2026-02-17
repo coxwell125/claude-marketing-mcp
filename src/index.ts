@@ -33,10 +33,10 @@ const getServer = () => {
 
 // ✅ Express app
 const app = createMcpExpressApp({
-  allowedOrigins: [
-    "https://claude-marketing-mcp.onrender.com",
-  ],
+  // Allow all origins/hosts (safe for internal tool server behind auth later)
+  allowedOrigins: ["*"],
 });
+
 
 
 // ✅ Render runs behind proxy
