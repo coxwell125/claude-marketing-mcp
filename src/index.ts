@@ -4,16 +4,14 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import * as z from "zod";
 
-/**
- * ✅ Create MCP Server (fresh per request)
- */
+// ✅ Create MCP server
 const getServer = () => {
   const server = new McpServer(
     { name: "marketing-mcp", version: "1.0.0" },
     { capabilities: { tools: {}, logging: {} } }
   );
 
-  // ✅ Test Tool
+  // ✅ Test tool
   server.registerTool(
     "marketing_test",
     {
@@ -25,12 +23,7 @@ const getServer = () => {
     },
     async ({ message }) => {
       return {
-        content: [
-          {
-            type: "text",
-            text: `✅ Remote MCP working. You said: ${message}`,
-          },
-        ],
+        content: [{ type: "text", text: `✅ Remote MCP working. You said: ${message}` }],
       };
     }
   );
@@ -38,21 +31,15 @@ const getServer = () => {
   return server;
 };
 
-/**
- * ✅ Express App Setup
- */
+// ✅ Express app
 const app = createMcpExpressApp();
 
-// Important for Render proxy
+// ✅ Render runs behind proxy
 app.set("trust proxy", 1);
 
 app.use(express.json());
 
-/**
- * ✅ FIX: Allow Render + Local Hosts
- * This fixes:
- * Invalid Host: claude-marketing-mcp.onrender.com
- */
+// ✅ Fix: allow specific hosts (prevents "Invalid Host")
 app.use((req, res, next) => {
   const host = (req.headers.host || "").toLowerCase();
 
@@ -69,10 +56,7 @@ app.use((req, res, next) => {
   if (!allowedHosts.has(host)) {
     return res.status(400).json({
       jsonrpc: "2.0",
-      error: {
-        code: -32000,
-        message: `Invalid Host: ${host}`,
-      },
+      error: { code: -32000, message: `Invalid Host: ${host}` },
       id: null,
     });
   }
@@ -80,13 +64,12 @@ app.use((req, res, next) => {
   next();
 });
 
-/**
- * ✅ MCP Endpoint
- */
+// ✅ MCP endpoint (IMPORTANT: /mcp)
 app.post("/mcp", async (req: Request, res: Response) => {
   const server = getServer();
 
   try {
+    // Stateless (simple)
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
@@ -100,7 +83,6 @@ app.post("/mcp", async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error("MCP error:", err);
-
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: "2.0",
@@ -111,15 +93,8 @@ app.post("/mcp", async (req: Request, res: Response) => {
   }
 });
 
-/**
- * Optional: GET not allowed
- */
-app.get("/mcp", (_req, res) =>
-  res.status(405).set("Allow", "POST").send("Method Not Allowed")
-);
+// Optional: GET /mcp not supported → 405 (ok)
+app.get("/mcp", (_req, res) => res.status(405).set("Allow", "POST").send("Method Not Allowed"));
 
 const PORT = Number(process.env.PORT || 8787);
-
-app.listen(PORT, () => {
-  console.log(`🚀 Remote MCP running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Remote MCP running: http://localhost:${PORT}/mcp`));
