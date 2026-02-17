@@ -32,7 +32,12 @@ const getServer = () => {
 };
 
 // ✅ Express app
-const app = createMcpExpressApp();
+const app = createMcpExpressApp({
+  allowedOrigins: [
+    "https://claude-marketing-mcp.onrender.com",
+  ],
+});
+
 
 // ✅ Render runs behind proxy
 app.set("trust proxy", 1);
