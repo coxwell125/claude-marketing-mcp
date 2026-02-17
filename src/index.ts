@@ -4,9 +4,6 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import * as z from "zod";
 
-/**
- * Create MCP server instance (tools registered here)
- */
 function createServer() {
   const server = new McpServer(
     { name: "marketing-mcp", version: "1.0.0" },
@@ -37,31 +34,30 @@ function createServer() {
   return server;
 }
 
-/**
- * Express app (NO host validation / NO allowedHosts middleware)
- */
+const allowedHosts = (process.env.ALLOWED_HOSTS ?? "claude-marketing-mcp.onrender.com")
+  .split(",")
+  .map((h) => h.trim())
+  .filter(Boolean);
+
 const app = createMcpExpressApp({
-  allowedOrigins: ["*"], // allow all origins
+  host: "0.0.0.0",
+  allowedHosts,
+  allowedOrigins: ["*"],
 });
 
-// Required on Render (behind proxy/load balancer)
 app.set("trust proxy", 1);
-
-// Ensure JSON body parsing
 app.use(express.json({ limit: "1mb" }));
 
-// Optional health check
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "marketing-mcp" });
+  res.json({ ok: true, service: "marketing-mcp", allowedHosts });
 });
 
-// MCP endpoint (JSON-RPC over Streamable HTTP)
 app.post("/mcp", async (req: Request, res: Response) => {
   const server = createServer();
 
   try {
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined, // stateless
+      sessionIdGenerator: undefined,
     });
 
     await server.connect(transport);
@@ -83,7 +79,6 @@ app.post("/mcp", async (req: Request, res: Response) => {
   }
 });
 
-// Block GET /mcp (MCP expects POST)
 app.get("/mcp", (_req, res) => {
   res.status(405).set("Allow", "POST").send("Method Not Allowed");
 });
@@ -91,4 +86,5 @@ app.get("/mcp", (_req, res) => {
 const PORT = Number(process.env.PORT || 8787);
 app.listen(PORT, () => {
   console.log(`🚀 Remote MCP running on port ${PORT}`);
+  console.log(`✅ allowedHosts: ${allowedHosts.join(", ")}`);
 });
