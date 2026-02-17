@@ -4,14 +4,52 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import * as z from "zod";
 
-// ✅ Create MCP server
+/**
+ * ✅ Render runs behind a proxy.
+ * We trust proxy so req.hostname / host checks behave properly.
+ */
+const app = createMcpExpressApp();
+app.set("trust proxy", 1);
+app.use(express.json());
+
+/**
+ * ✅ Host allowlist (fixes: Invalid Host: claude-marketing-mcp.onrender.com)
+ * Some stacks/middlewares reject unknown hosts. We allow known ones.
+ * Add your future domains (Vercel) here.
+ */
+app.use((req, res, next) => {
+  const host = (req.headers.host || "").toLowerCase();
+
+  // Allow your Render domain + localhost
+  const allowedHosts = new Set([
+    "claude-marketing-mcp.onrender.com",
+    "localhost:8787",
+    "localhost:3001",
+    "localhost:3000",
+    "127.0.0.1:8787",
+    "127.0.0.1:3001",
+    "127.0.0.1:3000",
+  ]);
+
+  // Sometimes proxies append port; normalize by keeping as-is (we already listed common ports).
+  if (!allowedHosts.has(host)) {
+    return res.status(400).json({
+      jsonrpc: "2.0",
+      error: { code: -32000, message: `Invalid Host: ${host}` },
+      id: null,
+    });
+  }
+
+  next();
+});
+
+// ✅ Create MCP server (fresh per request)
 const getServer = () => {
   const server = new McpServer(
     { name: "marketing-mcp", version: "1.0.0" },
     { capabilities: { tools: {}, logging: {} } }
   );
 
-  // ✅ Test tool (we’ll replace with Meta + GA4 tools later)
   server.registerTool(
     "marketing_test",
     {
@@ -31,16 +69,11 @@ const getServer = () => {
   return server;
 };
 
-// ✅ Express app with protection (good practice)
-const app = createMcpExpressApp();
-app.use(express.json());
-
 // ✅ MCP endpoint (IMPORTANT: /mcp)
 app.post("/mcp", async (req: Request, res: Response) => {
   const server = getServer();
 
   try {
-    // Stateless: no session storage (simple + good for start)
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
