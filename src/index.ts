@@ -64,7 +64,7 @@ function createServer() {
 
       return {
         content: [
-          { type: "json", json: payload },
+          { type: "text", text: JSON.stringify(payload) },
           { type: "text", text: `Meta spend for ${dateStr} (${timeZone}) is ${currency} ${spend}` },
         ],
       };

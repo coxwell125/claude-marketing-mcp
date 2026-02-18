@@ -1,51 +1,155 @@
-import { findTool, listToolDefinitions } from "./tools";
+// src/tools.ts
 
-export type JsonRpcRequest = {
-  jsonrpc?: "2.0";
-  id?: string | number | null;
-  method: string;
-  params?: any;
+export type JsonSchema = Record<string, any>;
+
+export type ToolDefinition = {
+  name: string;
+  title?: string;
+  description: string;
+  inputSchema: JsonSchema;
+  execution?: Record<string, any>;
 };
 
-export type JsonRpcResponse =
-  | { jsonrpc: "2.0"; id: string | number | null; result: any }
-  | { jsonrpc: "2.0"; id: string | number | null; error: { code: number; message: string; data?: any } };
+type ToolContentText = { type: "text"; text: string };
 
-function ok(id: any, result: any): JsonRpcResponse {
-  return { jsonrpc: "2.0", id: id ?? null, result };
+export type ToolCallResult = {
+  content: ToolContentText[];
+  isError?: boolean;
+};
+
+export type ToolHandler = (args: any) => Promise<ToolCallResult>;
+
+type ToolRegistryEntry = {
+  def: ToolDefinition;
+  handler: ToolHandler;
+};
+
+function isoDateInTZ(timeZone: string): string {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return fmt.format(new Date()); // YYYY-MM-DD
 }
 
-function err(id: any, code: number, message: string, data?: any): JsonRpcResponse {
-  return { jsonrpc: "2.0", id: id ?? null, error: { code, message, data } };
+function stableMockSpend(dateStr: string, accountId: string): number {
+  let seed = 0;
+  const s = `${dateStr}|${accountId}`;
+  for (let i = 0; i < s.length; i++) seed = (seed * 31 + s.charCodeAt(i)) >>> 0;
+
+  const min = 250;
+  const max = 3250;
+  const value = min + (seed % (max - min + 1));
+  return Number(value.toFixed(2));
 }
 
-export async function handleJsonRpc(req: JsonRpcRequest): Promise<JsonRpcResponse> {
-  const id = req.id ?? null;
+export const tools: ToolRegistryEntry[] = [
+  {
+    def: {
+      name: "marketing_test",
+      title: "Marketing Test",
+      description: "Test tool to confirm remote MCP server works",
+      inputSchema: {
+        $schema: "http://json-schema.org/draft-07/schema#",
+        type: "object",
+        properties: {
+          message: { type: "string" },
+        },
+        required: ["message"],
+        additionalProperties: false,
+      },
+      execution: { taskSupport: "forbidden" },
+    },
+    handler: async (args: { message: string }) => {
+      const msg = typeof args?.message === "string" ? args.message : "";
+      return {
+        content: [{ type: "text", text: `Remote MCP working. You said: ${msg}` }],
+      };
+    },
+  },
 
-  try {
-    if (!req.method) return err(id, -32600, "Invalid Request: missing method");
+  // ✅ NEW TOOL (MOCK): get_meta_spend_today
+  {
+    def: {
+      name: "get_meta_spend_today",
+      title: "Get Meta Spend Today",
+      description:
+        "Returns today's Meta (Facebook/Instagram) ad spend for a given ad account. Mock implementation for now.",
+      inputSchema: {
+        $schema: "http://json-schema.org/draft-07/schema#",
+        type: "object",
+        properties: {
+          account_id: {
+            type: "string",
+            description: "Meta Ad Account ID (e.g., act_123...). Optional for mock.",
+          },
+          time_zone: {
+            type: "string",
+            description: "IANA timezone (e.g., Asia/Kolkata). Defaults to Asia/Kolkata.",
+          },
+          currency: {
+            type: "string",
+            description: "ISO currency code. Defaults to INR.",
+          },
+          date: {
+            type: "string",
+            description: "Override date in YYYY-MM-DD. If omitted, uses today in time_zone.",
+            pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+          },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+      execution: { taskSupport: "forbidden" },
+    },
+    handler: async (args: any) => {
+      const timeZone =
+        typeof args?.time_zone === "string" && args.time_zone.trim()
+          ? args.time_zone.trim()
+          : "Asia/Kolkata";
 
-    if (req.method === "tools/list") {
-      return ok(id, { tools: listToolDefinitions() });
-    }
+      const currency =
+        typeof args?.currency === "string" && args.currency.trim()
+          ? args.currency.trim().toUpperCase()
+          : "INR";
 
-    if (req.method === "tools/call") {
-      const toolName = req.params?.name;
-      const args = req.params?.arguments ?? {};
+      const accountId =
+        typeof args?.account_id === "string" && args.account_id.trim()
+          ? args.account_id.trim()
+          : "act_mock_000";
 
-      if (typeof toolName !== "string" || !toolName.trim()) {
-        return err(id, -32602, "Invalid params: 'name' is required");
-      }
+      const dateStr =
+        typeof args?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(args.date)
+          ? args.date
+          : isoDateInTZ(timeZone);
 
-      const tool = findTool(toolName.trim());
-      if (!tool) return err(id, -32601, `Tool not found: ${toolName}`);
+      const spend = stableMockSpend(dateStr, accountId);
 
-      const result = await tool.handler(args);
-      return ok(id, result);
-    }
+      const payload = {
+        source: "mock",
+        platform: "meta",
+        date: dateStr,
+        time_zone: timeZone,
+        account_id: accountId,
+        currency,
+        spend,
+      };
 
-    return err(id, -32601, `Method not found: ${req.method}`);
-  } catch (e: any) {
-    return err(id, -32000, "Server error", { message: e?.message ?? String(e) });
-  }
+      // ✅ IMPORTANT: return TEXT ONLY (avoids TS error + MCP content type mismatch)
+      return {
+        content: [{ type: "text", text: JSON.stringify(payload) }],
+      };
+    },
+  },
+];
+
+export function listToolDefinitions(): ToolDefinition[] {
+  // mcpHandlers.ts expects result.tools = listToolDefinitions()
+  return tools.map((t) => t.def);
+}
+
+export function findTool(name: string): ToolRegistryEntry | undefined {
+  return tools.find((t) => t.def.name === name);
 }
