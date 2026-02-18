@@ -1,0 +1,203 @@
+// src/tools.ts
+// Tool registry for MCP server.
+// Add tools here and the server will expose them via tools/list and tools/call.
+
+export type JsonSchema = Record<string, any>;
+
+export type ToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: JsonSchema;
+};
+
+export type ToolCallResult = {
+  content: Array<
+    | { type: "text"; text: string }
+    | { type: "json"; json: any }
+  >;
+};
+
+export type ToolHandler = (args: any) => Promise<ToolCallResult>;
+
+type ToolRegistryEntry = {
+  def: ToolDefinition;
+  handler: ToolHandler;
+};
+
+function isoDateInTZ(timeZone: string): string {
+  // Returns YYYY-MM-DD for "today" in the given IANA timezone
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return fmt.format(new Date()); // en-CA -> YYYY-MM-DD
+}
+
+function stableMockSpend(dateStr: string, accountId: string): number {
+  // Deterministic pseudo-random spend based on date+accountId (good for testing)
+  let seed = 0;
+  const s = `${dateStr}|${accountId}`;
+  for (let i = 0; i < s.length; i++) seed = (seed * 31 + s.charCodeAt(i)) >>> 0;
+
+  // src/tools.ts
+  // Tool registry for MCP server.
+  // Add tools here and the server will expose them via tools/list and tools/call.
+
+  export type JsonSchema = Record<string, any>;
+
+  export type ToolDefinition = {
+    name: string;
+    description: string;
+    inputSchema: JsonSchema;
+  };
+
+  export type ToolCallResult = {
+    content: Array<
+      | { type: "text"; text: string }
+      | { type: "json"; json: any }
+    >;
+  };
+
+  export type ToolHandler = (args: any) => Promise<ToolCallResult>;
+
+  type ToolRegistryEntry = {
+    def: ToolDefinition;
+    handler: ToolHandler;
+  };
+
+  function isoDateInTZ(timeZone: string): string {
+    // Returns YYYY-MM-DD for "today" in the given IANA timezone
+    const fmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    return fmt.format(new Date()); // en-CA -> YYYY-MM-DD
+  }
+
+  function stableMockSpend(dateStr: string, accountId: string): number {
+    // Deterministic pseudo-random spend based on date+accountId (good for testing)
+    let seed = 0;
+    const s = `${dateStr}|${accountId}`;
+    for (let i = 0; i < s.length; i++) seed = (seed * 31 + s.charCodeAt(i)) >>> 0;
+
+    // Spend range: 250 - 3250 (mock)
+    const min = 250;
+    const max = 3250;
+    const value = min + (seed % (max - min + 1));
+    return Number(value.toFixed(2));
+  }
+
+  export const tools: ToolRegistryEntry[] = [
+    {
+      def: {
+        name: "marketing_test",
+        description: "Test tool to verify Remote MCP is working",
+        inputSchema: {
+          type: "object",
+          properties: {
+            message: { type: "string", description: "Any message to echo back" },
+          },
+          required: ["message"],
+          additionalProperties: false,
+        },
+      },
+      handler: async (args: { message: string }) => {
+        const msg = typeof args?.message === "string" ? args.message : "";
+        return {
+          content: [{ type: "text", text: `Remote MCP working. You said: ${msg}` }],
+        };
+      },
+    },
+
+    // ✅ NEW TOOL: get_meta_spend_today (MOCK)
+    {
+      def: {
+        name: "get_meta_spend_today",
+        description:
+          "Returns today's Meta (Facebook/Instagram) ad spend for a given ad account. Mock implementation for now.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            // Optional now; when you connect real Meta API, you’ll require account_id
+            account_id: {
+              type: "string",
+              description:
+                "Meta Ad Account ID (e.g., act_123...). Optional for mock.",
+            },
+            time_zone: {
+              type: "string",
+              description:
+                "IANA timezone (e.g., Asia/Kolkata). Defaults to Asia/Kolkata.",
+            },
+            currency: {
+              type: "string",
+              description: "ISO currency code. Defaults to INR.",
+            },
+            date: {
+              type: "string",
+              description:
+                "Override date in YYYY-MM-DD. If omitted, uses today in time_zone.",
+              pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+            },
+          },
+          required: [],
+          additionalProperties: false,
+        },
+      },
+      handler: async (args: any) => {
+        const timeZone =
+          typeof args?.time_zone === "string" && args.time_zone.trim()
+            ? args.time_zone.trim()
+            : "Asia/Kolkata";
+
+        const currency =
+          typeof args?.currency === "string" && args.currency.trim()
+            ? args.currency.trim().toUpperCase()
+            : "INR";
+
+        const accountId =
+          typeof args?.account_id === "string" && args.account_id.trim()
+            ? args.account_id.trim()
+            : "act_mock_000";
+
+        const dateStr =
+          typeof args?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(args.date)
+            ? args.date
+            : isoDateInTZ(timeZone);
+
+        const spend = stableMockSpend(dateStr, accountId);
+
+        const payload = {
+          source: "mock",
+          platform: "meta",
+          date: dateStr,
+          time_zone: timeZone,
+          account_id: accountId,
+          currency,
+          spend,
+        };
+
+        return {
+          content: [
+            { type: "json", json: payload },
+            {
+              type: "text",
+              text: `Meta spend for ${dateStr} (${timeZone}) is ${currency} ${spend}`,
+            },
+          ],
+        };
+      },
+    },
+  ];
+
+  export function listToolDefinitions(): ToolDefinition[] {
+    return tools.map((t) => t.def);
+  }
+
+  export function findTool(name: string): ToolRegistryEntry | undefined {
+    return tools.find((t) => t.def.name === name);
+  }
