@@ -1,6 +1,26 @@
 // src/tools.ts
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+
+export type JsonSchema = Record<string, any>;
+
+export type ToolDefinition = {
+  name: string;
+  title?: string;
+  description: string;
+  inputSchema: JsonSchema;
+  execution?: Record<string, any>;
+};
+
+export type ToolCallResult = {
+  content: Array<{ type: "text"; text: string }>;
+  isError?: boolean;
+};
+
+export type ToolHandler = (args: any) => Promise<ToolCallResult>;
+
+type ToolRegistryEntry = {
+  def: ToolDefinition;
+  handler: ToolHandler;
+};
 
 function isoDateInTZ(timeZone: string): string {
   const fmt = new Intl.DateTimeFormat("en-CA", {
@@ -23,116 +43,110 @@ function stableMockSpend(dateStr: string, accountId: string): number {
   return Number(value.toFixed(2));
 }
 
-export const tools: Tool[] = [
+export const tools: ToolRegistryEntry[] = [
   {
-    name: "marketing_test",
-    title: "Marketing Test",
-    description: "Test tool to confirm remote MCP server works",
-    inputSchema: {
-      $schema: "http://json-schema.org/draft-07/schema#",
-      type: "object",
-      properties: {
-        message: { type: "string" },
+    def: {
+      name: "marketing_test",
+      title: "Marketing Test",
+      description: "Test tool to confirm remote MCP server works",
+      inputSchema: {
+        $schema: "http://json-schema.org/draft-07/schema#",
+        type: "object",
+        properties: {
+          message: { type: "string" },
+        },
+        required: ["message"],
+        additionalProperties: false,
       },
-      required: ["message"],
-      additionalProperties: false,
+      execution: { taskSupport: "forbidden" },
+    },
+    handler: async (args: { message: string }) => {
+      const msg = typeof args?.message === "string" ? args.message : "";
+      return {
+        content: [{ type: "text", text: `Remote MCP working. You said: ${msg}` }],
+      };
     },
   },
 
   // ✅ NEW TOOL (MOCK): get_meta_spend_today
   {
-    name: "get_meta_spend_today",
-    title: "Get Meta Spend Today",
-    description:
-      "Returns today's Meta (Facebook/Instagram) ad spend for a given ad account. Mock implementation for now.",
-    inputSchema: {
-      $schema: "http://json-schema.org/draft-07/schema#",
-      type: "object",
-      properties: {
-        account_id: {
-          type: "string",
-          description: "Meta Ad Account ID (e.g., act_123...). Optional for mock.",
+    def: {
+      name: "get_meta_spend_today",
+      title: "Get Meta Spend Today",
+      description:
+        "Returns today's Meta (Facebook/Instagram) ad spend for a given ad account. Mock implementation for now.",
+      inputSchema: {
+        $schema: "http://json-schema.org/draft-07/schema#",
+        type: "object",
+        properties: {
+          account_id: {
+            type: "string",
+            description: "Meta Ad Account ID (e.g., act_123...). Optional for mock.",
+          },
+          time_zone: {
+            type: "string",
+            description: "IANA timezone (e.g., Asia/Kolkata). Defaults to Asia/Kolkata.",
+          },
+          currency: {
+            type: "string",
+            description: "ISO currency code. Defaults to INR.",
+          },
+          date: {
+            type: "string",
+            description: "Override date in YYYY-MM-DD. If omitted, uses today in time_zone.",
+            pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+          },
         },
-        time_zone: {
-          type: "string",
-          description: "IANA timezone (e.g., Asia/Kolkata). Defaults to Asia/Kolkata.",
-        },
-        currency: {
-          type: "string",
-          description: "ISO currency code. Defaults to INR.",
-        },
-        date: {
-          type: "string",
-          description:
-            "Override date in YYYY-MM-DD. If omitted, uses today in time_zone.",
-          pattern: "^\\d{4}-\\d{2}-\\d{2}$",
-        },
+        required: [],
+        additionalProperties: false,
       },
-      required: [],
-      additionalProperties: false,
+      execution: { taskSupport: "forbidden" },
+    },
+    handler: async (args: any) => {
+      const timeZone =
+        typeof args?.time_zone === "string" && args.time_zone.trim()
+          ? args.time_zone.trim()
+          : "Asia/Kolkata";
+
+      const currency =
+        typeof args?.currency === "string" && args.currency.trim()
+          ? args.currency.trim().toUpperCase()
+          : "INR";
+
+      const accountId =
+        typeof args?.account_id === "string" && args.account_id.trim()
+          ? args.account_id.trim()
+          : "act_mock_000";
+
+      const dateStr =
+        typeof args?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(args.date)
+          ? args.date
+          : isoDateInTZ(timeZone);
+
+      const spend = stableMockSpend(dateStr, accountId);
+
+      const payload = {
+        source: "mock",
+        platform: "meta",
+        date: dateStr,
+        time_zone: timeZone,
+        account_id: accountId,
+        currency,
+        spend,
+      };
+
+      // ✅ TEXT ONLY (no type:"json")
+      return {
+        content: [{ type: "text", text: JSON.stringify(payload) }],
+      };
     },
   },
 ];
 
-export async function callTool(
-  name: string,
-  args: Record<string, any> | undefined
-): Promise<CallToolResult> {
-  const arguments_ = args ?? {};
+export function listToolDefinitions(): ToolDefinition[] {
+  return tools.map((t) => t.def);
+}
 
-  if (name === "marketing_test") {
-    const msg = typeof arguments_.message === "string" ? arguments_.message : "";
-    return {
-      content: [{ type: "text", text: `Remote MCP working. You said: ${msg}` }],
-    };
-  }
-
-  if (name === "get_meta_spend_today") {
-    const timeZone =
-      typeof arguments_.time_zone === "string" && arguments_.time_zone.trim()
-        ? arguments_.time_zone.trim()
-        : "Asia/Kolkata";
-
-    const currency =
-      typeof arguments_.currency === "string" && arguments_.currency.trim()
-        ? arguments_.currency.trim().toUpperCase()
-        : "INR";
-
-    const accountId =
-      typeof arguments_.account_id === "string" && arguments_.account_id.trim()
-        ? arguments_.account_id.trim()
-        : "act_mock_000";
-
-    const dateStr =
-      typeof arguments_.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(arguments_.date)
-        ? arguments_.date
-        : isoDateInTZ(timeZone);
-
-    const spend = stableMockSpend(dateStr, accountId);
-
-    const payload = {
-      source: "mock",
-      platform: "meta",
-      date: dateStr,
-      time_zone: timeZone,
-      account_id: accountId,
-      currency,
-      spend,
-    };
-
-    // ✅ IMPORTANT: MCP result content must be TEXT (no type:"json")
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(payload),
-        },
-      ],
-    };
-  }
-
-  return {
-    content: [{ type: "text", text: `MCP error -32602: Tool ${name} not found` }],
-    isError: true,
-  };
+export function findTool(name: string): ToolRegistryEntry | undefined {
+  return tools.find((t) => t.def.name === name);
 }
