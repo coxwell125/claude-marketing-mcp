@@ -68,8 +68,92 @@ export const tools: ToolRegistryEntry[] = [
     },
   },
 
-  // ✅ NEW TOOL (MOCK): get_meta_spend_today
-  
+  // ✅ NEW TOOL (MOCK): get_meta_spend_today (now with metrics)
+  {
+    def: {
+      name: "get_meta_spend_today",
+      title: "Get Meta Spend Today",
+      description:
+        "Returns today's Meta (Facebook/Instagram) spend + impressions + clicks + leads + CPL. Mock implementation for now.",
+      inputSchema: {
+        $schema: "http://json-schema.org/draft-07/schema#",
+        type: "object",
+        properties: {
+          account_id: {
+            type: "string",
+            description: "Meta Ad Account ID (e.g., act_123...). Optional for mock.",
+          },
+          time_zone: {
+            type: "string",
+            description: "IANA timezone (e.g., Asia/Kolkata). Defaults to Asia/Kolkata.",
+          },
+          currency: {
+            type: "string",
+            description: "ISO currency code. Defaults to INR.",
+          },
+          date: {
+            type: "string",
+            description: "Override date in YYYY-MM-DD. If omitted, uses today in time_zone.",
+            pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+          },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+      execution: { taskSupport: "forbidden" },
+    },
+    handler: async (args: any) => {
+      const timeZone =
+        typeof args?.time_zone === "string" && args.time_zone.trim()
+          ? args.time_zone.trim()
+          : "Asia/Kolkata";
+
+      const currency =
+        typeof args?.currency === "string" && args.currency.trim()
+          ? args.currency.trim().toUpperCase()
+          : "INR";
+
+      const accountId =
+        typeof args?.account_id === "string" && args.account_id.trim()
+          ? args.account_id.trim()
+          : "act_mock_000";
+
+      const dateStr =
+        typeof args?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(args.date)
+          ? args.date
+          : isoDateInTZ(timeZone);
+
+      const spend = stableMockSpend(dateStr, accountId);
+
+      // ✅ Derive realistic mock metrics
+      const impressions = Math.round(spend * 18); // ~18 impressions per ₹1
+      const clicks = Math.max(1, Math.round(impressions * 0.025)); // 2.5% CTR
+      const leads = Math.max(1, Math.round(clicks * 0.02)); // 2% CVR
+      const cpl = Number((spend / leads).toFixed(2));
+
+      const payload = {
+        ok: true,
+        source: "mock",
+        platform: "meta",
+        date: dateStr,
+        time_zone: timeZone,
+        account_id: accountId,
+        currency,
+        metrics: {
+          spend,
+          impressions,
+          clicks,
+          leads,
+          cpl,
+        },
+        note: "Mock response. Next step: replace with real Meta Insights API.",
+      };
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(payload) }],
+      };
+    },
+  },
 ];
 
 export function listToolDefinitions(): ToolDefinition[] {
