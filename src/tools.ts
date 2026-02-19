@@ -69,78 +69,7 @@ export const tools: ToolRegistryEntry[] = [
   },
 
   // ✅ NEW TOOL (MOCK): get_meta_spend_today
-  {
-    def: {
-      name: "get_meta_spend_today",
-      title: "Get Meta Spend Today",
-      description:
-        "Returns today's Meta (Facebook/Instagram) ad spend for a given ad account. Mock implementation for now.",
-      inputSchema: {
-        $schema: "http://json-schema.org/draft-07/schema#",
-        type: "object",
-        properties: {
-          account_id: {
-            type: "string",
-            description: "Meta Ad Account ID (e.g., act_123...). Optional for mock.",
-          },
-          time_zone: {
-            type: "string",
-            description: "IANA timezone (e.g., Asia/Kolkata). Defaults to Asia/Kolkata.",
-          },
-          currency: {
-            type: "string",
-            description: "ISO currency code. Defaults to INR.",
-          },
-          date: {
-            type: "string",
-            description: "Override date in YYYY-MM-DD. If omitted, uses today in time_zone.",
-            pattern: "^\\d{4}-\\d{2}-\\d{2}$",
-          },
-        },
-        required: [],
-        additionalProperties: false,
-      },
-      execution: { taskSupport: "forbidden" },
-    },
-    handler: async (args: any) => {
-      const timeZone =
-        typeof args?.time_zone === "string" && args.time_zone.trim()
-          ? args.time_zone.trim()
-          : "Asia/Kolkata";
-
-      const currency =
-        typeof args?.currency === "string" && args.currency.trim()
-          ? args.currency.trim().toUpperCase()
-          : "INR";
-
-      const accountId =
-        typeof args?.account_id === "string" && args.account_id.trim()
-          ? args.account_id.trim()
-          : "act_mock_000";
-
-      const dateStr =
-        typeof args?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(args.date)
-          ? args.date
-          : isoDateInTZ(timeZone);
-
-      const spend = stableMockSpend(dateStr, accountId);
-
-      const payload = {
-        source: "mock",
-        platform: "meta",
-        date: dateStr,
-        time_zone: timeZone,
-        account_id: accountId,
-        currency,
-        spend,
-      };
-
-      // ✅ TEXT ONLY (no type:"json")
-      return {
-        content: [{ type: "text", text: JSON.stringify(payload) }],
-      };
-    },
-  },
+  
 ];
 
 export function listToolDefinitions(): ToolDefinition[] {
